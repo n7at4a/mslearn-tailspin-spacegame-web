@@ -1,84 +1,90 @@
-trigger:
-- '*'
-
+### YamlMime:Yaml
+ms.openlocfilehash: c9b172ba56ad352479a714f433c1781ff135b3db
+ms.sourcegitcommit: 30b83f324396700a9f03c4d42aa5ae0721fb69b9
+ms.translationtype: HT
+ms.contentlocale: ja-JP
+ms.lasthandoff: 06/21/2019
+ms.locfileid: "67323389"
 pool:
-  vmImage: 'ubuntu-16.04'
+  vmImage: Ubuntu-16.04
   demands:
-    - npm
-
+  - npm
 variables:
-  buildConfiguration: 'Release'
-  wwwrootDir: 'Tailspin.SpaceGame.Web/wwwroot'
-  dotnetSdkVersion: '3.1.100'
-
+  buildConfiguration: Release
+  wwwrootDir: Tailspin.SpaceGame.Web/wwwroot
+  dotnetSdkVersion: 2.1.505
 steps:
-- task: UseDotNet@2
-  displayName: 'Use .NET Core SDK $(dotnetSdkVersion)'
+- task: DotNetCoreInstaller@0
+  displayName: Use .NET Core SDK $(dotnetSdkVersion)
   inputs:
-    version: '$(dotnetSdkVersion)'
-
+    version: $(dotnetSdkVersion)
 - task: Npm@1
-  displayName: 'Run npm install'
+  displayName: Run npm install
   inputs:
     verbose: false
-
-- script: './node_modules/.bin/node-sass $(wwwrootDir) --output $(wwwrootDir)'
-  displayName: 'Compile Sass assets'
-
+- script: ./node_modules/.bin/node-sass $(wwwrootDir) --output $(wwwrootDir)
+  displayName: Compile Sass assets
 - task: gulp@1
-  displayName: 'Run gulp tasks'
-
-- script: 'echo "$(Build.DefinitionName), $(Build.BuildId), $(Build.BuildNumber)" > buildinfo.txt'
-  displayName: 'Write build info'
+  displayName: Run gulp tasks
+- script: echo "$(Build.DefinitionName), $(Build.BuildId), $(Build.BuildNumber)" > buildinfo.txt
+  displayName: Write build info
   workingDirectory: $(wwwrootDir)
-
 - task: DotNetCoreCLI@2
-  displayName: 'Restore project dependencies'
+  displayName: Restore project dependencies
   inputs:
-    command: 'restore'
+    command: restore
     projects: '**/*.csproj'
-
-- task: DotNetCoreCLI@2
-  displayName: 'Build the project - $(buildConfiguration)'
+- task: SonarCloudPrepare@1
+  displayName: Prepare SonarCloud analysis
   inputs:
-    command: 'build'
-    arguments: '--no-restore --configuration $(buildConfiguration)'
-    projects: '**/*.csproj'
+    SonarCloud: SonarCloud connection 1
+    organization: $(organization)
+    projectKey: $(projectKey)
+    projectName: $(projectName)
+    projectVersion: $(Build.BuildNumber)
+    extraProperties: >
+      sonar.cs.opencover.reportsPaths=$(Build.SourcesDirectory)/TestResults/Coverage/coverage.opencover.xml
 
+      sonar.exclusions=**/wwwroot/lib/**/*
 - task: DotNetCoreCLI@2
-  displayName: 'Install ReportGenerator'
+  displayName: Build the project - $(buildConfiguration)
+  inputs:
+    command: build
+    arguments: --no-restore --configuration $(buildConfiguration)
+    projects: '**/*.csproj'
+- task: DotNetCoreCLI@2
+  displayName: Install ReportGenerator
   inputs:
     command: custom
     custom: tool
-    arguments: 'install --global dotnet-reportgenerator-globaltool'
-
+    arguments: install --global dotnet-reportgenerator-globaltool
 - task: DotNetCoreCLI@2
-  displayName: 'Run unit tests - $(buildConfiguration)'
+  displayName: Run unit tests - $(buildConfiguration)
   inputs:
-    command: 'test'
-    arguments: '--no-build --configuration $(buildConfiguration) /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:CoverletOutput=$(Build.SourcesDirectory)/TestResults/Coverage/'
+    command: test
+    arguments: --no-build --configuration $(buildConfiguration) /p:CollectCoverage=true /p:CoverletOutputFormat="cobertura%2copencover" /p:CoverletOutput=$(Build.SourcesDirectory)/TestResults/Coverage/
     publishTestResults: true
     projects: '**/*.Tests.csproj'
-
-- script: |
+- script: >
     reportgenerator -reports:$(Build.SourcesDirectory)/**/coverage.cobertura.xml -targetdir:$(Build.SourcesDirectory)/CodeCoverage -reporttypes:HtmlInline_AzurePipelines
-  displayName: 'Create code coverage report'
-
+  displayName: Create code coverage report
+- task: SonarCloudAnalyze@1
+  displayName: Run SonarCloud code analysis
+- task: SonarCloudPublish@1
+  displayName: Publish SonarCloud quality gate results
 - task: PublishCodeCoverageResults@1
-  displayName: 'Publish code coverage report'
+  displayName: Publish code coverage report
   inputs:
-    codeCoverageTool: 'cobertura'
-    summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.cobertura.xml'
-
+    codeCoverageTool: cobertura
+    summaryFileLocation: $(Build.SourcesDirectory)/**/coverage.cobertura.xml
 - task: DotNetCoreCLI@2
-  displayName: 'Publish the project - $(buildConfiguration)'
+  displayName: Publish the project - $(buildConfiguration)
   inputs:
-    command: 'publish'
+    command: publish
     projects: '**/*.csproj'
     publishWebProjects: false
-    arguments: '--no-build --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/$(buildConfiguration)'
+    arguments: --no-build --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/$(buildConfiguration)
     zipAfterPublish: true
-
 - task: PublishBuildArtifacts@1
   displayName: 'Publish Artifact: drop'
   condition: succeeded()
